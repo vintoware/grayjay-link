@@ -37,9 +37,12 @@ if [ -f "$SHARE/icons/hicolor/icon-theme.cache" ]; then
     gtk-update-icon-cache -q -t "$SHARE/icons/hicolor" 2>/dev/null || true
 fi
 
-say "Registering the grayjay-link: URL handler"
+say "Registering the grayjay-link: URL handler and the link dispatcher"
 mkdir -p "$SHARE/applications"
-sed "s|@BIN@|$BIN|" "$SRC/data/grayjay-link-handler.desktop.in" > "$SHARE/applications/grayjay-link-handler.desktop"
+for template in "$SRC"/data/grayjay-link-*.desktop.in; do
+    name=$(basename "$template" .in)
+    sed "s|@BIN@|$BIN|" "$template" > "$SHARE/applications/$name"
+done
 update-desktop-database -q "$SHARE/applications" 2>/dev/null || true
 xdg-mime default grayjay-link-handler.desktop x-scheme-handler/grayjay-link 2>/dev/null || true
 
@@ -78,6 +81,8 @@ cat <<EOF
 Done. Next steps:
   1. Add the "Grayjay Link" widget to your panel (right-click panel → Add Widgets…).
      The background helper runs while the widget exists and stops ~30 s after it is removed.
+  To open YouTube/Twitch links from other apps (Slack, terminal, …) in Grayjay too,
+     turn on "Links from other apps" in the widget (or run: grayjay-link link-handler on).
   2. Open it and pair: in Grayjay → Sync copy the pairing link, paste it into the widget, accept in Grayjay.
   3. Firefox: install the extension from $SRC/firefox (see README).
 EOF

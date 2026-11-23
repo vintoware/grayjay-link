@@ -80,6 +80,25 @@ By default the extension adds:
 
 To make plain clicks open in Grayjay, enable *Open supported links in Grayjay when I click them* in the extension's options. Firefox then asks for permission to run on all sites. Interception only applies to links that lead to *another* site, so browsing around youtube.com itself is unaffected. Ctrl/middle click still opens a tab.
 
+### Links from other apps
+
+The Firefox extension only sees links you click *inside* Firefox. Links that other apps open
+(Slack, Konsole, mail, Flatpak apps through the desktop portal) go to the default web browser
+instead. To open those in Grayjay as well, turn on **Links from other apps** in the widget, or
+run `grayjay-link link-handler on`.
+
+This makes `grayjay-link-browser.desktop` the handler for `http`/`https` links:
+
+- a supported link (YouTube videos, shorts, live streams, playlists and channels; Twitch
+  channels and VODs) opens in Grayjay when the helper is running;
+- every other link, and every link while the helper isn't running, goes straight to the
+  browser that was the default before, so nothing else changes.
+
+Local `.html` files are left to the browser. Turning the switch off (or running `uninstall.sh`)
+restores the previous default browser. Limitations: Firefox may report that it isn't the default
+browser any more; and links Grayjay itself opens "in the browser" are sent back to Grayjay if
+they're supported.
+
 ### Other apps
 
 Any program can hand a link over with:
@@ -107,6 +126,8 @@ grayjay-link status [--json]     connection state
 grayjay-link pair LINK           pair using Grayjay's grayjay://sync/… link
 grayjay-link open URL [--position SECONDS] [--no-launch] [--no-focus]
 grayjay-link unpair
+grayjay-link link-handler on|off|status   open links from other apps in Grayjay
+grayjay-link browse [--dry-run] URL...     route links like a browser (what the dispatcher runs)
 grayjay-link start | stop        start/stop the background daemon (the widget starts it)
 grayjay-link daemon [-v] [--lease S]   run it in the foreground
 ```

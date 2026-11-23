@@ -131,6 +131,13 @@ def main(argv: list[str] | None = None) -> int:
     o.add_argument("--no-focus", action="store_true", help="don't raise the Grayjay window")
     u = sub.add_parser("open-uri", help="handle a grayjay-link: URI (used by the desktop handler)")
     u.add_argument("uri")
+    b = sub.add_parser("browse", help="open links like a web browser: supported ones in Grayjay, "
+                                      "the rest in your browser (used by the link dispatcher)")
+    b.add_argument("urls", nargs="*")
+    b.add_argument("--dry-run", action="store_true", help="only print where each link would go")
+    lh = sub.add_parser("link-handler", help="open YouTube/Twitch links from other apps in Grayjay")
+    lh.add_argument("action", choices=["on", "off", "status"])
+    lh.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
 
     if args.command == "daemon":
@@ -195,6 +202,32 @@ def main(argv: list[str] | None = None) -> int:
             if r.get("message"):
                 print(r["message"])
             return 0 if r.get("ok") else 1
+        if args.command == "browse":
+            from . import links
+
+            def open_in_grayjay(url: str) -> bool:
+                try:
+                    return bool(request({"cmd": "open", "url": url}).get("ok"))
+                except (DaemonUnavailable, OSError, ValueError):
+                    return False
+
+            for url, target in links.dispatch(args.urls, open_in_grayjay, dry_run=args.dry_run):
+                if args.dry_run:
+                    print(f"{target}\t{url}")
+            return 0
+        if args.command == "link-handler":
+            from . import links
+            try:
+                st = {"on": links.enable, "off": links.disable, "status": links.status}[args.action]()
+            except (RuntimeError, subprocess.SubprocessError, OSError) as e:
+                print(f"error: {e}", file=sys.stderr)
+                return 1
+            if args.json:
+                print(json.dumps(st))
+            else:
+                print(f"Link dispatcher: {'on' if st['enabled'] else 'off'}"
+                      f" (other links open in {st['fallback'] or 'your browser'})")
+            return 0
         if args.command in ("open", "open-uri"):
             if args.command == "open":
                 url, pos = args.url, args.position

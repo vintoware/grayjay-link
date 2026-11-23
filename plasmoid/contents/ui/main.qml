@@ -75,6 +75,22 @@ PlasmoidItem {
     // daemon exits ~30 s after the last one (widget removed, plasmashell gone).
     property double lastStartAttempt: 0
 
+    // `grayjay-link link-handler status --json`: is the system link dispatcher on?
+    property var linkHandler: null
+
+    function refreshLinkHandler() {
+        run(cli + " link-handler status --json", (code, out, err) => {
+            try {
+                root.linkHandler = JSON.parse(out);
+            } catch (e) {
+                root.linkHandler = null;
+            }
+        });
+    }
+
+    onExpandedChanged: if (expanded) refreshLinkHandler()
+    Component.onCompleted: refreshLinkHandler()
+
     function refresh() {
         run(cli + " status --json --heartbeat", (code, out, err) => {
             try {
@@ -350,6 +366,55 @@ PlasmoidItem {
                     opacity: 0.7
                     wrapMode: Text.WordWrap
                     text: i18n("Grayjay starts automatically if it isn't running.")
+                }
+
+                Kirigami.Heading {
+                    level: 4
+                    visible: linkSwitchRow.visible
+                    text: i18n("Links from other apps")
+                }
+                RowLayout {
+                    id: linkSwitchRow
+                    Layout.fillWidth: true
+                    visible: !!root.linkHandler && root.linkHandler.installed
+                    PlasmaComponents3.Switch {
+                        id: linkSwitch
+                        checked: !!root.linkHandler && root.linkHandler.enabled
+                        enabled: !root.busy
+                        onToggled: {
+                            const want = checked;
+                            root.run(root.cli + " link-handler " + (want ? "on" : "off") + " --json", (code, out, err) => {
+                                if (code !== 0) {
+                                    root.actionError = (err || out || "").trim().replace(/^error: /, "");
+                                }
+                                root.refreshLinkHandler();
+                            });
+                        }
+                    }
+                    PlasmaComponents3.Label {
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        text: i18n("Open YouTube and Twitch links from other apps in Grayjay")
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                linkSwitch.toggle();
+                                linkSwitch.toggled();  // toggle() alone doesn't emit toggled
+                            }
+                        }
+                    }
+                }
+                PlasmaComponents3.Label {
+                    Layout.fillWidth: true
+                    visible: linkSwitchRow.visible
+                    font: Kirigami.Theme.smallFont
+                    opacity: 0.7
+                    wrapMode: Text.WordWrap
+                    text: root.linkHandler && root.linkHandler.enabled
+                          ? i18n("Grayjay Link is your default web browser handler. Other links go straight to %1.",
+                                 root.linkHandler.fallback_name || i18n("your browser"))
+                          : i18n("Makes Grayjay Link the default handler for web links; every other link is passed on to %1.",
+                                 root.linkHandler && root.linkHandler.fallback_name ? root.linkHandler.fallback_name : i18n("your browser"))
                 }
                 Item { Layout.preferredHeight: Kirigami.Units.smallSpacing }
                 RowLayout {

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Grayjay Link
+GenericName=Link dispatcher
+Comment=Opens YouTube and Twitch links in Grayjay and every other link in your web browser
+Icon=grayjay-link
+Exec=@BIN@ browse %U
+MimeType=x-scheme-handler/http;x-scheme-handler/https;
+NoDisplay=true
+Terminal=false
