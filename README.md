@@ -61,15 +61,18 @@ Or from a terminal: `grayjay-link pair 'grayjay://sync/…'`.
 
 ### Firefox extension
 
-Release builds of Firefox only install extensions that Mozilla has signed. Sign this one once as an **unlisted** add-on. It's free, and the add-on is never published on addons.mozilla.org.
+Each release has a Mozilla-signed `grayjay-link-firefox-X.Y.Z.xpi` attached. It's signed as an
+*unlisted* add-on, so it never appears on addons.mozilla.org. Open the `.xpi` from the
+[latest release](https://github.com/vintoware/grayjay-link/releases/latest) in Firefox
+(drag it onto a window, or *File → Open File*) and confirm **Add**.
 
-1. Build the zip: `tools/package-firefox.sh` creates `dist/grayjay-link-firefox-<version>.zip`.
-2. Sign in at the [AMO Developer Hub](https://addons.mozilla.org/developers/) and choose **Submit a New Add-on** → **On your own**. Upload the zip. AMO validates it and signs it automatically, usually within minutes.
-3. Download the signed `.xpi` from the add-on's version page. Open it in Firefox (drag it onto a window, or *File → Open File*) and confirm **Add**.
+From 0.3.0 on, Firefox updates the extension by itself. The manifest's `update_url` points
+at the `updates.json` on the latest release, and Firefox checks it about once a day; you can
+also use *about:addons → ⚙ → Check for Updates*. Versions installed before 0.3.0 don't know
+that URL, so install 0.3.0 by hand once.
 
-For a new version, bump `version` in `firefox/manifest.json`, then rebuild and upload it under the same add-on with **Upload New Version**.
-
-To just try it, open `about:debugging` → *This Firefox* → *Load Temporary Add-on…* and pick `firefox/manifest.json`. It stays loaded until Firefox restarts.
+To try a local change, open `about:debugging` → *This Firefox* → *Load Temporary Add-on…*
+and pick `firefox/manifest.json`. It stays loaded until Firefox restarts.
 
 By default the extension adds:
 - **Open link in Grayjay** and **Open page in Grayjay** to the right-click menu;
