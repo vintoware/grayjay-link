@@ -38,7 +38,10 @@ chmod 755 "$NATIVE_HOST"
 
 say "Installing icon"
 install -Dm644 "$SRC/plasmoid/contents/icons/grayjay-link.svg" "$SHARE/icons/hicolor/scalable/apps/grayjay-link.svg"
-gtk-update-icon-cache -q -t "$SHARE/icons/hicolor" 2>/dev/null || true
+# Only refresh a GTK icon cache that already exists; don't introduce one.
+if [ -f "$SHARE/icons/hicolor/icon-theme.cache" ]; then
+    gtk-update-icon-cache -q -t "$SHARE/icons/hicolor" 2>/dev/null || true
+fi
 
 say "Registering the grayjay-link: URL handler"
 mkdir -p "$SHARE/applications"
@@ -72,6 +75,9 @@ if command -v kpackagetool6 >/dev/null; then
 else
     warn "kpackagetool6 not found; skipping the Plasma widget."
 fi
+# Running KDE apps (plasmashell's "Add Widgets" list included) cache failed icon
+# lookups until told the icon theme changed.
+dbus-send --session --type=signal /KIconLoader org.kde.KIconLoader.iconChanged int32:0 2>/dev/null || true
 
 # The daemon's lifetime follows the widget; remove the systemd unit older versions installed.
 if [ -f "$CONFIG/systemd/user/grayjay-link.service" ]; then
