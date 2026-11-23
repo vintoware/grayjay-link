@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   release:
-    if: startsWith(github.event.head_commit.message, 'chore(release): ')
+    if: "startsWith(github.event.head_commit.message, 'chore(release): ')"
     runs-on: ubuntu-24.04
     permissions:
       contents: write   # tag + GitHub release
@@ -97,8 +97,16 @@ jobs:
     # repository's 3-hourly check picks the release up anyway.
     needs: release
     runs-on: ubuntu-24.04
+    env:
+      HAS_DEPLOY_KEY: ${{ secrets.RPM_REPO_DEPLOY_KEY != '' }}
     steps:
+      - name: Check for the deploy key
+        if: env.HAS_DEPLOY_KEY != 'true'
+        run: |
+          echo "::warning::RPM_REPO_DEPLOY_KEY is not set; skipping the immediate RPM trigger. vintoware-rpm's scheduled check will pick up this release within 3 hours."
+
       - name: Install cosign
+        if: env.HAS_DEPLOY_KEY == 'true'
         env:
           COSIGN_VERSION: v3.1.4
           COSIGN_SHA256: 424e2c97d0b45fd7a6b608a87f090f35633f4c23ece5f092d48bba11aaf4bbfa
@@ -109,12 +117,14 @@ jobs:
           chmod +x /usr/local/bin/cosign
 
       - uses: actions/checkout@v4
+        if: env.HAS_DEPLOY_KEY == 'true'
         with:
           repository: vintoware/vintoware-rpm
           ssh-key: ${{ secrets.RPM_REPO_DEPLOY_KEY }}
           path: rpm
 
       - name: Bump packages/grayjay-link and push
+        if: env.HAS_DEPLOY_KEY == 'true'
         working-directory: rpm
         env:
           GITHUB_TOKEN: ${{ github.token }}
