@@ -4,6 +4,13 @@ All notable changes to this project. Versions follow [Semantic Versioning](https
 sections are generated from [Conventional Commits](https://www.conventionalcommits.org) by
 `tools/release.py` (see CONTRIBUTING.md).
 
+## [0.3.1](https://github.com/vintoware/grayjay-link/compare/v0.3.0...v0.3.1) (2026-11-23)
+
+### Fixes
+
+- **widget:** size the popup for its header so the Unpair button isn't cut off ([`aa60f84`](https://github.com/vintoware/grayjay-link/commit/aa60f8404e9e6e85a385a88f8b76792177fa7f05))
+
+
 ## [0.3.0](https://github.com/vintoware/grayjay-link/compare/v0.2.0...v0.3.0) (2026-11-23)
 
 ### Features
