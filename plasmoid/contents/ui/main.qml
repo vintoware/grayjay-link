@@ -17,7 +17,8 @@ PlasmoidItem {
     property bool busy: false
     property int execCounter: 0
 
-    readonly property string cli: "\"$HOME/.local/bin/grayjay-link\""
+    // install.sh puts the CLI in ~/.local/bin (preferred when present); the RPM in /usr/bin.
+    readonly property string cli: "\"$([ -x \"$HOME/.local/bin/grayjay-link\" ] && echo \"$HOME/.local/bin/grayjay-link\" || echo /usr/bin/grayjay-link)\""
     readonly property url iconSource: Qt.resolvedUrl("../icons/grayjay-link.svg")
     readonly property string linkState: status ? status.state : "loading"
     readonly property bool paired: !!(status && status.paired)
