@@ -4,6 +4,17 @@ All notable changes to this project. Versions follow [Semantic Versioning](https
 sections are generated from [Conventional Commits](https://www.conventionalcommits.org) by
 `tools/release.py` (see CONTRIBUTING.md).
 
+## [0.3.0](https://github.com/vintoware/grayjay-link/compare/v0.2.0...v0.3.0) (2026-11-23)
+
+### Features
+
+- **firefox:** update automatically from GitHub releases ([`e4d5021`](https://github.com/vintoware/grayjay-link/commit/e4d5021419a79e75cdd1770173e84b424ae65dfa))
+
+### Chores
+
+- **release:** sign the Firefox extension on AMO and publish updates.json ([`4e7f0f0`](https://github.com/vintoware/grayjay-link/commit/4e7f0f0b0ee039fd3e3f8eb2193bcaf276d3e64b))
+
+
 ## 0.2.0 (2026-11-23)
 
 First public release.
