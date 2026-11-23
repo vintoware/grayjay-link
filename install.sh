@@ -50,19 +50,43 @@ update-desktop-database -q "$SHARE/applications" 2>/dev/null || true
 xdg-mime default grayjay-link-handler.desktop x-scheme-handler/grayjay-link 2>/dev/null || true
 
 say "Registering the Firefox native messaging host"
-# Firefox keeps native manifests next to its profiles: ~/.mozilla for legacy
-# installs, $XDG_CONFIG_HOME/mozilla otherwise. Never create ~/.mozilla on an
-# XDG install: Firefox would take it as the legacy root and lose the profiles.
+# Firefox reads user-level native manifests only from ~/.mozilla/native-messaging-hosts,
+# even when its profiles use the XDG layout (~/.config/mozilla/firefox). On such
+# installs ~/.mozilla must NOT be created: its existence makes Firefox switch back to
+# the legacy profile root and lose the profiles. Use the system directory instead.
+SYS_MANIFEST_DIR=/usr/lib64/mozilla/native-messaging-hosts
+[ -d /usr/lib64/mozilla ] || SYS_MANIFEST_DIR=/usr/lib/mozilla/native-messaging-hosts
+SYS_HOST=/usr/local/libexec/grayjay-link-native-host
+rm -f "$CONFIG/mozilla/native-messaging-hosts/grayjay_link.json"   # written by an older version; never read
+rmdir "$CONFIG/mozilla/native-messaging-hosts" 2>/dev/null || true
 if [ -d "$HOME/.mozilla/firefox" ]; then
-    MOZ_ROOT="$HOME/.mozilla"
+    mkdir -p "$HOME/.mozilla/native-messaging-hosts"
+    sed "s|@NATIVE_HOST@|$NATIVE_HOST|" "$SRC/data/grayjay_link.native-host.json.in" \
+        > "$HOME/.mozilla/native-messaging-hosts/grayjay_link.json"
 else
-    MOZ_ROOT="$CONFIG/mozilla"
+    TMP_MANIFEST="$(mktemp)"
+    sed "s|@NATIVE_HOST@|$SYS_HOST|" "$SRC/data/grayjay_link.native-host.json.in" > "$TMP_MANIFEST"
+    if cmp -s "$TMP_MANIFEST" "$SYS_MANIFEST_DIR/grayjay_link.json" && cmp -s "$SRC/data/grayjay-link-native-host" "$SYS_HOST"; then
+        echo "    already installed in $SYS_MANIFEST_DIR"
+    elif [ -t 0 ] && command -v sudo >/dev/null; then
+        echo "    Firefox uses the XDG profile layout, so the host is installed system-wide (sudo):"
+        echo "      $SYS_HOST"
+        echo "      $SYS_MANIFEST_DIR/grayjay_link.json"
+        sudo install -Dm755 "$SRC/data/grayjay-link-native-host" "$SYS_HOST"
+        sudo install -Dm644 "$TMP_MANIFEST" "$SYS_MANIFEST_DIR/grayjay_link.json"
+    else
+        warn "Firefox needs a system-wide native messaging host. Run in a terminal:"
+        echo "      sudo install -Dm755 '$SRC/data/grayjay-link-native-host' $SYS_HOST"
+        echo "      sudo install -Dm644 '$TMP_MANIFEST' $SYS_MANIFEST_DIR/grayjay_link.json"
+        TMP_MANIFEST=""   # keep it for the commands above
+    fi
+    [ -n "$TMP_MANIFEST" ] && rm -f "$TMP_MANIFEST"
 fi
-for dir in "$MOZ_ROOT/native-messaging-hosts" "$HOME/.librewolf/native-messaging-hosts"; do
-    case "$dir" in *librewolf*) [ -d "$HOME/.librewolf" ] || continue ;; esac
-    mkdir -p "$dir"
-    sed "s|@NATIVE_HOST@|$NATIVE_HOST|" "$SRC/data/grayjay_link.native-host.json.in" > "$dir/grayjay_link.json"
-done
+if [ -d "$HOME/.librewolf" ]; then
+    mkdir -p "$HOME/.librewolf/native-messaging-hosts"
+    sed "s|@NATIVE_HOST@|$NATIVE_HOST|" "$SRC/data/grayjay_link.native-host.json.in" \
+        > "$HOME/.librewolf/native-messaging-hosts/grayjay_link.json"
+fi
 flatpak info org.mozilla.firefox >/dev/null 2>&1 && warn "Firefox Flatpak detected: native messaging into Flatpak Firefox is not supported by this installer."
 
 say "Installing the Plasma widget"

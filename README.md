@@ -30,7 +30,11 @@ Plasma widget / CLI ────────┘   (runs while the widget exists)
 Everything is installed for the current user, with no root needed:
 - the helper goes in `~/.local/share/grayjay-link` and `~/.local/bin/grayjay-link`;
 - the Plasma widget, the icon and the `grayjay-link:` handler are registered;
-- the Firefox native messaging manifest is written next to your Firefox profiles.
+- the Firefox native messaging host is registered. Firefox only reads per-user manifests from `~/.mozilla`, and on
+  XDG-layout installs (profiles in `~/.config/mozilla/firefox`, as on current Fedora) that directory must not be
+  created: if it exists, Firefox switches back to the legacy profile location and your profiles seem to vanish.
+  In that case the installer asks for `sudo` once and installs `/usr/lib64/mozilla/native-messaging-hosts/grayjay_link.json`
+  plus a small wrapper, `/usr/local/libexec/grayjay-link-native-host`, which runs the calling user's helper.
 
 Requirements:
 - Grayjay from Flathub (`app.grayjay.Grayjay`);

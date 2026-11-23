@@ -23,6 +23,11 @@ rm -f "$SHARE/applications/grayjay-link-handler.desktop" \
       "$HOME/.librewolf/native-messaging-hosts/grayjay_link.json" \
       "$HOME/.local/bin/grayjay-link"
 rm -rf "$SHARE/grayjay-link"
+for f in /usr/lib64/mozilla/native-messaging-hosts/grayjay_link.json \
+         /usr/lib/mozilla/native-messaging-hosts/grayjay_link.json \
+         /usr/local/libexec/grayjay-link-native-host; do
+    [ -e "$f" ] && sudo rm -f "$f"
+done
 update-desktop-database -q "$SHARE/applications" 2>/dev/null || true
 
 if [ "${1:-}" = "--purge" ]; then
