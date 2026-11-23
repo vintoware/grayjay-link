@@ -262,6 +262,11 @@ def cmd_prepare(args) -> int:
     if branch != "main":
         raise SystemExit(f"releases are made from main (on {branch})")
     current = current_version()
+    # Release tags are created by CI on GitHub; a plain `git pull` doesn't fetch
+    # tags that point at commits it already has, so fetch them explicitly.
+    if subprocess.run(["git", "fetch", "--quiet", "--tags", "origin"], cwd=ROOT).returncode != 0:
+        print("warning: couldn't fetch tags from origin; the last release may be detected wrong",
+              file=sys.stderr)
     tag = last_tag()
     changes = [c for c in commits(f"{tag}..HEAD" if tag else "HEAD") if not c.is_release]
     if not changes:
