@@ -159,7 +159,13 @@ PlasmoidItem {
     fullRepresentation: PlasmaExtras.Representation {
         Layout.minimumWidth: Kirigami.Units.gridUnit * 20
         Layout.preferredWidth: Kirigami.Units.gridUnit * 24
-        Layout.minimumHeight: content.implicitHeight + Kirigami.Units.largeSpacing * 2
+        // Representation is a Page: the header sits above the content area, so the
+        // popup must be tall enough for both (leaving the header out cut off the
+        // last row, the Unpair button).
+        Layout.minimumHeight: implicitHeaderHeight + topPadding + bottomPadding
+                              + content.implicitHeight + content.anchors.margins * 2
+                              + Kirigami.Units.largeSpacing
+        Layout.preferredHeight: Layout.minimumHeight
         collapseMarginsHint: false
 
         header: PlasmaExtras.PlasmoidHeading {
