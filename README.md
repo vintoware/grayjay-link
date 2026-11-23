@@ -23,6 +23,20 @@ Plasma widget / CLI ────────┘   (runs while the widget exists)
 
 ## Install
 
+### From the vintoware dnf repository (Fedora)
+
+```sh
+sudo dnf config-manager addrepo --from-repofile=https://vintoware.github.io/vintoware-rpm/vintoware.repo
+sudo dnf install grayjay-link
+```
+
+This installs the helper (`/usr/bin/grayjay-link`), the Plasma widget, the icon and the
+`grayjay-link:` handler system-wide. New releases arrive with `sudo dnf upgrade`.
+Then add the widget and pair, as described below. If you used `install.sh` before, run
+`./uninstall.sh` first; your pairing in `~/.config/grayjay-link` is kept.
+
+### From a checkout
+
 ```sh
 ./install.sh
 ```
@@ -123,6 +137,14 @@ python3 -m unittest
   - no CORS headers are ever sent, so web pages can't read responses.
 
   Other extensions in your Firefox, and local programs running as you, can open links in Grayjay through it, the same as they could through `xdg-open grayjay-link:…`.
+
+## Releases
+
+Versions follow Semantic Versioning, and commit messages follow Conventional Commits. A release
+is made by pushing the commit that `tools/release.py prepare` creates. CI then tags it,
+publishes the GitHub release with a generated changelog (Features / Fixes / Chores), and
+triggers the RPM build in vintoware-rpm. See [CONTRIBUTING.md](CONTRIBUTING.md) and
+[CHANGELOG.md](CHANGELOG.md).
 
 ## Uninstall
 
