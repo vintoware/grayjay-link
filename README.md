@@ -47,15 +47,15 @@ Or from a terminal: `grayjay-link pair 'grayjay://sync/…'`.
 
 ### Firefox extension
 
-Release builds of Firefox only install signed extensions. You have two options:
+Release builds of Firefox only install extensions that Mozilla has signed. Sign this one once as an **unlisted** add-on. It's free, and the add-on is never published on addons.mozilla.org.
 
-- **Try it:** open `about:debugging` → *This Firefox* → *Load Temporary Add-on…* and pick `firefox/manifest.json`. It stays loaded until Firefox restarts.
-- **Install permanently:** sign it as an *unlisted* add-on with your own free AMO API key. It is never published on addons.mozilla.org.
-  ```sh
-  cd firefox
-  npx web-ext sign --channel=unlisted --api-key="$AMO_JWT_ISSUER" --api-secret="$AMO_JWT_SECRET"
-  ```
-  Then open the resulting `.xpi` in Firefox.
+1. Build the zip: `tools/package-firefox.sh` creates `dist/grayjay-link-firefox-<version>.zip`.
+2. Sign in at the [AMO Developer Hub](https://addons.mozilla.org/developers/) and choose **Submit a New Add-on** → **On your own**. Upload the zip. AMO validates it and signs it automatically, usually within minutes.
+3. Download the signed `.xpi` from the add-on's version page. Open it in Firefox (drag it onto a window, or *File → Open File*) and confirm **Add**.
+
+For a new version, bump `version` in `firefox/manifest.json`, then rebuild and upload it under the same add-on with **Upload New Version**.
+
+To just try it, open `about:debugging` → *This Firefox* → *Load Temporary Add-on…* and pick `firefox/manifest.json`. It stays loaded until Firefox restarts.
 
 By default the extension adds:
 - **Open link in Grayjay** and **Open page in Grayjay** to the right-click menu;

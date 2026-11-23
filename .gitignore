@@ -3,3 +3,4 @@ __pycache__/
 *.xpi
 web-ext-artifacts/
 .web-extension-id
+dist/
