@@ -1,6 +1,7 @@
 import importlib.util
 import pathlib
 import unittest
+import unittest.mock
 
 spec = importlib.util.spec_from_file_location(
     "release_tool", pathlib.Path(__file__).resolve().parent.parent / "tools" / "release.py")
@@ -52,6 +53,32 @@ class VersioningRules(unittest.TestCase):
         fixes = text.split("### Fixes")[1].split("###")[0]
         self.assertIn("crash", fixes)
         self.assertIn("faster", fixes)
+
+
+class ExtensionVersioning(unittest.TestCase):
+    def test_changelog_says_whether_the_extension_changed(self):
+        new = rt.render_section("0.4.0", "0.3.1", [c("feat(firefox): x")], None, extension="0.4.0")
+        self.assertIn("Firefox extension: new version 0.4.0.", new)
+        same = rt.render_section("0.4.0", "0.3.1", [c("feat(daemon): x")], None, extension="0.3.1")
+        self.assertIn("Firefox extension: unchanged (0.3.1).", same)
+
+    def test_extension_version_may_lag_but_not_lead(self):
+        versions = {"grayjay_link/__init__.py": "0.4.0", "plasmoid/metadata.json": "0.4.0"}
+        for ext, ok in (("0.3.1", True), ("0.4.0", True), ("0.5.0", False), ("junk", False)):
+            with self.subTest(ext=ext), unittest.mock.patch.object(
+                    rt, "read_versions", return_value={**versions, "firefox/manifest.json": ext}):
+                if ok:
+                    self.assertEqual(rt.current_version(), "0.4.0")
+                else:
+                    with self.assertRaises(SystemExit):
+                        rt.current_version()
+
+    def test_core_files_must_agree(self):
+        with unittest.mock.patch.object(rt, "read_versions", return_value={
+                "grayjay_link/__init__.py": "0.4.0", "plasmoid/metadata.json": "0.3.1",
+                "firefox/manifest.json": "0.3.1"}):
+            with self.assertRaises(SystemExit):
+                rt.current_version()
 
 
 if __name__ == "__main__":

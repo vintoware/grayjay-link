@@ -25,6 +25,7 @@ jobs:
       id-token: write   # keyless cosign signature
     outputs:
       version: ${{ steps.version.outputs.version }}
+      extension_changed: ${{ steps.version.outputs.extension_changed }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,6 +47,12 @@ jobs:
           fi
           python tools/release.py check "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          # tools/release.py sets the extension's version to the release version
+          # only when something under firefox/ changed since the previous release.
+          ext=$(python -c 'import json; print(json.load(open("firefox/manifest.json"))["version"])')
+          if [ "$ext" = "$version" ]; then changed=true; else changed=false; fi
+          echo "Firefox extension $ext (changed in this release: $changed)"
+          echo "extension_changed=$changed" >> "$GITHUB_OUTPUT"
 
       - name: Tests
         run: python -m unittest
@@ -53,11 +60,12 @@ jobs:
       - name: Build release assets
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          EXTENSION_CHANGED: ${{ steps.version.outputs.extension_changed }}
         run: |
           mkdir -p dist
           git archive --format=tar.gz --prefix="grayjay-link-$VERSION/" -o "dist/grayjay-link-$VERSION.tar.gz" HEAD
           (cd plasmoid && zip -qrX "../dist/grayjay-link-$VERSION.plasmoid" .)
-          tools/package-firefox.sh
+          if [ "$EXTENSION_CHANGED" = true ]; then tools/package-firefox.sh; fi
           python tools/release.py notes "$VERSION" > notes.md
           (cd dist && sha256sum -- * > checksums.txt && cat checksums.txt)
 
@@ -91,10 +99,12 @@ jobs:
             --notes-file notes.md dist/*
 
   firefox:
-    # Signs the extension on addons.mozilla.org as an unlisted (self-distributed)
-    # add-on and attaches the signed .xpi plus updates.json to the release.
-    # Installed copies find new versions through the manifest's update_url, which
-    # points at updates.json on the latest release.
+    # When firefox/ changed in this release: signs the extension on
+    # addons.mozilla.org as an unlisted (self-distributed) add-on and attaches the
+    # signed .xpi plus updates.json to the release. Otherwise nothing is submitted
+    # to AMO and the previous updates.json is carried over. Installed copies find
+    # new versions through the manifest's update_url, which points at
+    # updates.json on the latest release, so every release must have one.
     needs: release
     runs-on: ubuntu-24.04
     permissions:
@@ -102,24 +112,46 @@ jobs:
     env:
       HAS_AMO_KEYS: ${{ secrets.AMO_JWT_ISSUER != '' && secrets.AMO_JWT_SECRET != '' }}
       VERSION: ${{ needs.release.outputs.version }}
+      EXTENSION_CHANGED: ${{ needs.release.outputs.extension_changed }}
+      SIGN: ${{ needs.release.outputs.extension_changed == 'true' && secrets.AMO_JWT_ISSUER != '' && secrets.AMO_JWT_SECRET != '' }}
     steps:
       - name: Check for AMO credentials
-        if: env.HAS_AMO_KEYS != 'true'
+        if: env.EXTENSION_CHANGED == 'true' && env.HAS_AMO_KEYS != 'true'
         run: |
           echo "::warning::AMO_JWT_ISSUER / AMO_JWT_SECRET are not set; the Firefox extension was not signed. Upload grayjay-link-firefox-$VERSION.zip to addons.mozilla.org by hand."
 
       - uses: actions/checkout@v4
-        if: env.HAS_AMO_KEYS == 'true'
         with:
           ref: v${{ env.VERSION }}
 
+      - name: Carry over updates.json (extension unchanged)
+        if: env.EXTENSION_CHANGED != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ext=$(python3 -c 'import json; print(json.load(open("firefox/manifest.json"))["version"])')
+          echo "Firefox extension unchanged at $ext; not submitting to addons.mozilla.org."
+          for tag in $(gh release list --exclude-drafts --limit 100 --json tagName --jq '.[].tagName'); do
+            [ "$tag" = "v$VERSION" ] && continue
+            if gh release download "$tag" --pattern updates.json --dir carried --clobber 2>/dev/null; then
+              listed=$(python3 -c 'import json,sys; d=json.load(open("carried/updates.json")); print(next(iter(d["addons"].values()))["updates"][-1]["version"])')
+              if [ "$listed" != "$ext" ]; then
+                echo "::error::updates.json from $tag lists $listed, but the extension is $ext"; exit 1
+              fi
+              echo "Carrying over updates.json from $tag (extension $ext)"
+              gh release upload "v$VERSION" carried/updates.json --clobber
+              exit 0
+            fi
+          done
+          echo "::warning::no earlier release has updates.json; installed extensions won't see updates until one does"
+
       - uses: actions/setup-node@v4
-        if: env.HAS_AMO_KEYS == 'true'
+        if: env.SIGN == 'true'
         with:
           node-version: lts/*
 
       - name: Sign on addons.mozilla.org (unlisted)
-        if: env.HAS_AMO_KEYS == 'true'
+        if: env.SIGN == 'true'
         env:
           WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
           WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
@@ -129,7 +161,7 @@ jobs:
           ls -l signed
 
       - name: Attach the signed XPI and updates.json
-        if: env.HAS_AMO_KEYS == 'true'
+        if: env.SIGN == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

@@ -11,8 +11,11 @@ Rules (see CONTRIBUTING.md):
     "!" after the type/scope, or a "BREAKING CHANGE:" footer -> major bump
     (while the version is 0.x, a breaking change bumps the minor version)
 
-  One version for everything; kept in grayjay_link/__init__.py,
-  plasmoid/metadata.json and firefox/manifest.json.
+  The project version lives in grayjay_link/__init__.py and
+  plasmoid/metadata.json. The Firefox extension (firefox/manifest.json) has
+  its own version: a release sets it to the release version only when
+  something under firefox/ changed since the previous release, so unchanged
+  extensions are not re-submitted to addons.mozilla.org.
 
 Subcommands:
   prepare [--version X.Y.Z] [--body-file F] [--dry-run]
@@ -73,11 +76,15 @@ def git(*args: str) -> str:
 
 # --- version files -------------------------------------------------------------
 
-VERSION_FILES = {
+CORE_VERSION_FILES = {
     "grayjay_link/__init__.py": (r'^__version__ = "(?P<v>[^"]+)"$', '__version__ = "{v}"'),
     "plasmoid/metadata.json": (r'^(?P<pre>\s*"Version": )"(?P<v>[^"]+)"', '{pre}"{v}"'),
+}
+EXTENSION_DIR = "firefox"
+EXTENSION_VERSION_FILE = {
     "firefox/manifest.json": (r'^(?P<pre>  "version": )"(?P<v>[^"]+)"', '{pre}"{v}"'),
 }
+VERSION_FILES = {**CORE_VERSION_FILES, **EXTENSION_VERSION_FILE}
 
 
 def read_versions() -> dict[str, str]:
@@ -90,8 +97,9 @@ def read_versions() -> dict[str, str]:
     return found
 
 
-def write_versions(version: str) -> None:
-    for rel, (pattern, template) in VERSION_FILES.items():
+def write_versions(version: str, extension: bool) -> None:
+    files = VERSION_FILES if extension else CORE_VERSION_FILES
+    for rel, (pattern, template) in files.items():
         path = ROOT / rel
         text, n = re.subn(pattern, lambda m: template.format(v=version, pre=m.groupdict().get("pre", "")),
                           path.read_text(), count=1, flags=re.M)
@@ -103,10 +111,25 @@ def write_versions(version: str) -> None:
 
 
 def current_version() -> str:
-    versions = set(read_versions().values())
+    found = read_versions()
+    versions = {found[rel] for rel in CORE_VERSION_FILES}
     if len(versions) != 1:
-        raise SystemExit(f"version files disagree: {read_versions()}")
-    return versions.pop()
+        raise SystemExit(f"version files disagree: {found}")
+    version = versions.pop()
+    ext = found["firefox/manifest.json"]
+    if not VERSION_RE.match(ext) or version_tuple(ext) > version_tuple(version):
+        raise SystemExit(f"extension version {ext} must be a version no newer than {version}")
+    return version
+
+
+def extension_version() -> str:
+    return read_versions()["firefox/manifest.json"]
+
+
+def extension_changed_since(tag: str | None) -> bool:
+    if tag is None:
+        return True
+    return subprocess.run(["git", "diff", "--quiet", tag, "HEAD", "--", EXTENSION_DIR], cwd=ROOT).returncode != 0
 
 
 # --- commits -------------------------------------------------------------------
@@ -183,11 +206,16 @@ def repo_url() -> str:
     return f"https://github.com/{m.group('path')}" if m else DEFAULT_REPO_URL
 
 
-def render_section(version: str, previous: str | None, changes: list[Commit], body: str | None) -> str:
+def render_section(version: str, previous: str | None, changes: list[Commit], body: str | None,
+                   extension: str | None = None) -> str:
     url = repo_url()
     date = datetime.date.today().isoformat()
     title = f"[{version}]({url}/compare/v{previous}...v{version})" if previous else version
     out = [f"## {title} ({date})", ""]
+    if extension == version:
+        out += [f"Firefox extension: new version {version}.", ""]
+    elif extension:
+        out += [f"Firefox extension: unchanged ({extension}).", ""]
     if body is not None:
         out += [body.strip(), ""]
         return "\n".join(out) + "\n"
@@ -252,13 +280,15 @@ def cmd_prepare(args) -> int:
     if previous and version_tuple(version) <= version_tuple(previous):
         raise SystemExit(f"{version} is not newer than the last release {previous}")
     body = pathlib.Path(args.body_file).read_text() if args.body_file else None
-    section = render_section(version, previous, changes, body)
+    ext_changed = extension_changed_since(tag)
+    section = render_section(version, previous, changes, body,
+                             extension=version if ext_changed else extension_version())
 
     print(f"Releasing {version} (last release: {previous or 'none'}, {len(changes)} commits)\n")
     print(section)
     if args.dry_run:
         return 0
-    write_versions(version)
+    write_versions(version, extension=ext_changed)
     prepend_changelog(section)
     git("add", "CHANGELOG.md", *VERSION_FILES)
     git("commit", "-q", "-m", f"chore(release): {version}")

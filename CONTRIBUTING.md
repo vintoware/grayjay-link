@@ -25,10 +25,16 @@ The highest bump among the commits since the last release wins. Typical scopes a
 
 ## Versioning
 
-- One [Semantic Versioning](https://semver.org) number covers the whole project: the
-  helper, the Plasma widget and the Firefox extension. It lives in
-  `grayjay_link/__init__.py`, `plasmoid/metadata.json` and `firefox/manifest.json`. CI
-  checks that the three agree. Don't edit them by hand; the release tool does it.
+- The project version ([Semantic Versioning](https://semver.org)) covers the helper and
+  the Plasma widget. It lives in `grayjay_link/__init__.py` and `plasmoid/metadata.json`,
+  and CI checks that the two agree.
+- The Firefox extension (`firefox/manifest.json`) keeps its own version. A release sets it
+  to the release version **only when something under `firefox/` changed since the previous
+  release**. Otherwise the extension keeps its version, nothing is submitted to
+  addons.mozilla.org, and the previous `updates.json` is carried over to the new release.
+  The changelog notes which case applied. The extension's version is never newer than the
+  project's.
+- Don't edit these versions by hand; the release tool does it.
 - Tags are `vX.Y.Z`, created only by the release workflow.
 
 ## Making a release
@@ -61,7 +67,7 @@ When that commit reaches `main`, `.github/workflows/release.yml`:
    vintoware-rpm's build-and-publish workflow. If this step fails, vintoware-rpm's 3-hourly
    check picks the release up anyway.
 
-In parallel, the `firefox` job signs the extension on addons.mozilla.org as a new version
+In parallel, if the extension changed, the `firefox` job signs it on addons.mozilla.org as a new version
 of the unlisted add-on, with `web-ext sign --channel=unlisted` and the `AMO_JWT_ISSUER` /
 `AMO_JWT_SECRET` secrets. It then attaches `grayjay-link-firefox-X.Y.Z.xpi` and
 `updates.json` to the release. Installed extensions pick the new version up through
