@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Grayjay Link
+Comment=Open grayjay-link: links in Grayjay
+Icon=grayjay-link
+Exec=@BIN@ open-uri %u
+MimeType=x-scheme-handler/grayjay-link;
+NoDisplay=true
+Terminal=false

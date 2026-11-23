@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# Install grayjay-link for the current user (no root needed).
+set -euo pipefail
+
+SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SHARE="${XDG_DATA_HOME:-$HOME/.local/share}"
+CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}"
+LIB="$SHARE/grayjay-link"
+BIN_DIR="$HOME/.local/bin"
+BIN="$BIN_DIR/grayjay-link"
+NATIVE_HOST="$LIB/native-host"
+PLASMOID_ID="com.vintoware.grayjaylink"
+
+say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
+warn() { printf '\033[33mwarning:\033[0m %s\n' "$*" >&2; }
+
+python3 - <<'EOF' || { echo "error: python3 >= 3.11 is required" >&2; exit 1; }
+import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)
+EOF
+flatpak info app.grayjay.Grayjay >/dev/null 2>&1 || warn "Grayjay Flatpak (app.grayjay.Grayjay) not found; install it from Flathub."
+
+say "Installing helper to $LIB"
+rm -rf "$LIB/grayjay_link"
+mkdir -p "$LIB" "$BIN_DIR"
+cp -r "$SRC/grayjay_link" "$LIB/"
+find "$LIB/grayjay_link" -name __pycache__ -prune -exec rm -rf {} +
+
+cat > "$BIN" <<EOF
+#!/bin/sh
+PYTHONPATH="$LIB" exec python3 -P -m grayjay_link "\$@"
+EOF
+chmod 755 "$BIN"
+cat > "$NATIVE_HOST" <<EOF
+#!/bin/sh
+exec "$BIN" native-host "\$@"
+EOF
+chmod 755 "$NATIVE_HOST"
+
+say "Installing icon"
+install -Dm644 "$SRC/plasmoid/contents/icons/grayjay-link.svg" "$SHARE/icons/hicolor/scalable/apps/grayjay-link.svg"
+gtk-update-icon-cache -q -t "$SHARE/icons/hicolor" 2>/dev/null || true
+
+say "Registering the grayjay-link: URL handler"
+mkdir -p "$SHARE/applications"
+sed "s|@BIN@|$BIN|" "$SRC/data/grayjay-link-handler.desktop.in" > "$SHARE/applications/grayjay-link-handler.desktop"
+update-desktop-database -q "$SHARE/applications" 2>/dev/null || true
+xdg-mime default grayjay-link-handler.desktop x-scheme-handler/grayjay-link 2>/dev/null || true
+
+say "Registering the Firefox native messaging host"
+# Firefox keeps native manifests next to its profiles: ~/.mozilla for legacy
+# installs, $XDG_CONFIG_HOME/mozilla otherwise. Never create ~/.mozilla on an
+# XDG install: Firefox would take it as the legacy root and lose the profiles.
+if [ -d "$HOME/.mozilla/firefox" ]; then
+    MOZ_ROOT="$HOME/.mozilla"
+else
+    MOZ_ROOT="$CONFIG/mozilla"
+fi
+for dir in "$MOZ_ROOT/native-messaging-hosts" "$HOME/.librewolf/native-messaging-hosts"; do
+    case "$dir" in *librewolf*) [ -d "$HOME/.librewolf" ] || continue ;; esac
+    mkdir -p "$dir"
+    sed "s|@NATIVE_HOST@|$NATIVE_HOST|" "$SRC/data/grayjay_link.native-host.json.in" > "$dir/grayjay_link.json"
+done
+flatpak info org.mozilla.firefox >/dev/null 2>&1 && warn "Firefox Flatpak detected: native messaging into Flatpak Firefox is not supported by this installer."
+
+say "Installing the Plasma widget"
+if command -v kpackagetool6 >/dev/null; then
+    if kpackagetool6 -t Plasma/Applet -s "$PLASMOID_ID" >/dev/null 2>&1; then
+        kpackagetool6 -t Plasma/Applet -u "$SRC/plasmoid" >/dev/null
+    else
+        kpackagetool6 -t Plasma/Applet -i "$SRC/plasmoid" >/dev/null
+    fi
+else
+    warn "kpackagetool6 not found; skipping the Plasma widget."
+fi
+
+say "Starting the background service"
+install -Dm644 "$SRC/data/grayjay-link.service" "$CONFIG/systemd/user/grayjay-link.service"
+systemctl --user daemon-reload
+systemctl --user enable grayjay-link.service >/dev/null 2>&1
+systemctl --user restart grayjay-link.service
+
+cat <<EOF
+
+Done. Next steps:
+  1. Add the "Grayjay Link" widget to your panel (right-click panel → Add Widgets…).
+  2. Open it and pair: in Grayjay → Sync copy the pairing link, paste it into the widget, accept in Grayjay.
+  3. Firefox: install the extension from $SRC/firefox (see README).
+EOF
+case ":$PATH:" in *":$BIN_DIR:"*) ;; *) warn "$BIN_DIR is not on your PATH (only matters for using grayjay-link in a terminal)." ;; esac

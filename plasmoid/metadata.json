@@ -1,0 +1,19 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "vintoware"
+            }
+        ],
+        "Category": "Multimedia",
+        "Description": "Pair with Grayjay Desktop and open links in it",
+        "Icon": "grayjay-link",
+        "Id": "com.vintoware.grayjaylink",
+        "License": "MIT",
+        "Name": "Grayjay Link",
+        "Version": "0.1.0",
+        "Website": "https://github.com/vintoware/grayjay-link"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Grayjay Link",
+  "version": "0.1.0",
+  "description": "Open YouTube, Twitch and other video links in Grayjay Desktop.",
+  "icons": {
+    "48": "icons/grayjay-link.svg",
+    "96": "icons/grayjay-link.svg"
+  },
+  "permissions": ["nativeMessaging", "menus", "storage", "notifications", "scripting"],
+  "optional_host_permissions": ["<all_urls>"],
+  "background": {
+    "scripts": ["rules.js", "background.js"]
+  },
+  "action": {
+    "default_title": "Open this page in Grayjay",
+    "default_icon": "icons/grayjay-link.svg"
+  },
+  "options_ui": {
+    "page": "options.html"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "grayjay-link@vintoware",
+      "strict_min_version": "128.0"
+    }
+  }
+}

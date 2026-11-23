@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+*.xpi
+web-ext-artifacts/
+.web-extension-id

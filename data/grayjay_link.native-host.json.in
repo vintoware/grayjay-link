@@ -1,0 +1,7 @@
+{
+  "name": "grayjay_link",
+  "description": "Grayjay Link helper",
+  "path": "@NATIVE_HOST@",
+  "type": "stdio",
+  "allowed_extensions": ["grayjay-link@vintoware"]
+}

@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font: menu; padding: 8px 12px; max-width: 560px; }
+    fieldset { border: 1px solid color-mix(in srgb, currentColor 25%, transparent); border-radius: 6px; margin: 12px 0; }
+    label { display: block; margin: 6px 0; }
+    textarea { width: 100%; min-height: 4em; box-sizing: border-box; }
+    .hint { opacity: 0.7; font-size: 0.9em; }
+    #status { margin-top: 8px; }
+    .ok { color: #2e7d32; } .bad { color: #c62828; }
+  </style>
+</head>
+<body>
+  <label><input type="checkbox" id="intercept"> Open supported links in Grayjay when I click them</label>
+  <p class="hint">Applies to left clicks on links that lead to another site (clicking around on youtube.com itself
+    stays in the browser). Ctrl/middle click still opens a tab. Needs permission to run on all sites.
+    Without it, use the right-click menu or the toolbar button.</p>
+  <fieldset>
+    <legend>Sites</legend>
+    <label><input type="checkbox" id="svc-youtube"> YouTube (videos, shorts, live, playlists, channels)</label>
+    <label><input type="checkbox" id="svc-twitch"> Twitch (channels, VODs)</label>
+    <label>Other hosts, one per line (every link on these hosts is sent to Grayjay):
+      <textarea id="extra" placeholder="odysee.com&#10;rumble.com"></textarea></label>
+  </fieldset>
+  <button id="check">Check connection</button>
+  <div id="status"></div>
+  <script src="rules.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>
