@@ -1,0 +1,139 @@
+name: Release
+
+# A push to main whose head commit is a release commit ("chore(release): X.Y.Z",
+# created by tools/release.py prepare) tags that commit vX.Y.Z, publishes the
+# GitHub release with its CHANGELOG.md section, and hands the new version to the
+# vintoware-rpm repository.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: startsWith(github.event.head_commit.message, 'chore(release): ')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write   # tag + GitHub release
+      id-token: write   # keyless cosign signature
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Read version
+        id: version
+        env:
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          version=$(printf '%s\n' "$MESSAGE" | head -n 1 | sed -nE 's/^chore\(release\): ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p')
+          [ -n "$version" ] || { echo "::error::not a release commit: $(printf '%s' "$MESSAGE" | head -n 1)"; exit 1; }
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null; then
+            echo "::error::tag v$version already exists"; exit 1
+          fi
+          python tools/release.py check "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Tests
+        run: python -m unittest
+
+      - name: Build release assets
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p dist
+          git archive --format=tar.gz --prefix="grayjay-link-$VERSION/" -o "dist/grayjay-link-$VERSION.tar.gz" HEAD
+          (cd plasmoid && zip -qrX "../dist/grayjay-link-$VERSION.plasmoid" .)
+          tools/package-firefox.sh
+          python tools/release.py notes "$VERSION" > notes.md
+          (cd dist && sha256sum -- * > checksums.txt && cat checksums.txt)
+
+      # Same pinned cosign as vintoware-rpm, checked against sigstore/cosign's
+      # cosign_checksums.txt for that release.
+      - name: Install cosign
+        env:
+          COSIGN_VERSION: v3.1.4
+          COSIGN_SHA256: 424e2c97d0b45fd7a6b608a87f090f35633f4c23ece5f092d48bba11aaf4bbfa
+        run: |
+          curl -fsSL -o /usr/local/bin/cosign \
+            "https://github.com/sigstore/cosign/releases/download/$COSIGN_VERSION/cosign-linux-amd64"
+          echo "$COSIGN_SHA256  /usr/local/bin/cosign" | sha256sum -c -
+          chmod +x /usr/local/bin/cosign
+
+      - name: Sign checksums (Sigstore keyless)
+        run: |
+          cosign sign-blob --yes --bundle dist/checksums.txt.sigstore.json dist/checksums.txt
+          cosign verify-blob --bundle dist/checksums.txt.sigstore.json \
+            --certificate-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@refs/heads/main" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-github-workflow-sha "$GITHUB_SHA" \
+            dist/checksums.txt
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "v$VERSION" --target "$GITHUB_SHA" --title "grayjay-link $VERSION" \
+            --notes-file notes.md dist/*
+
+  rpm:
+    # Runs vintoware-rpm's own update hook (which verifies the signed checksums
+    # against this workflow and commit) and pushes the spec bump; that push
+    # starts vintoware-rpm's build-and-publish workflow. If this job fails, the
+    # repository's 3-hourly check picks the release up anyway.
+    needs: release
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install cosign
+        env:
+          COSIGN_VERSION: v3.1.4
+          COSIGN_SHA256: 424e2c97d0b45fd7a6b608a87f090f35633f4c23ece5f092d48bba11aaf4bbfa
+        run: |
+          curl -fsSL -o /usr/local/bin/cosign \
+            "https://github.com/sigstore/cosign/releases/download/$COSIGN_VERSION/cosign-linux-amd64"
+          echo "$COSIGN_SHA256  /usr/local/bin/cosign" | sha256sum -c -
+          chmod +x /usr/local/bin/cosign
+
+      - uses: actions/checkout@v4
+        with:
+          repository: vintoware/vintoware-rpm
+          ssh-key: ${{ secrets.RPM_REPO_DEPLOY_KEY }}
+          path: rpm
+
+      - name: Bump packages/grayjay-link and push
+        working-directory: rpm
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          hook=packages/grayjay-link/update
+          if [ ! -x "$hook" ]; then
+            echo "::warning::$hook not found in vintoware-rpm; nothing to trigger"; exit 0
+          fi
+          git config user.name "grayjay-link release"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for attempt in 1 2 3; do
+            git fetch -q origin main && git reset -q --hard origin/main
+            "$hook"
+            if git diff --quiet; then
+              echo "packages/grayjay-link is already at $VERSION"; exit 0
+            fi
+            git commit -qam "Update grayjay-link to $VERSION"
+            if git push origin HEAD:main; then exit 0; fi
+            echo "push raced with another commit; retrying ($attempt)"; sleep 5
+          done
+          exit 1

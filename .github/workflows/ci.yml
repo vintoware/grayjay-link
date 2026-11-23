@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"   # oldest supported
+
+      - name: Tests
+        run: python -m unittest -v
+
+      - name: Version files agree
+        run: python tools/release.py check
+
+      - name: Commit messages follow Conventional Commits
+        env:
+          BEFORE: ${{ github.event.before }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ -n "$BASE" ]; then
+            range="$BASE..$HEAD_SHA"
+          elif [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ]; then
+            range="$BEFORE..$HEAD_SHA"
+          else
+            range="$HEAD_SHA"
+          fi
+          python tools/release.py lint "$range"
+
+      - name: Shell scripts
+        run: shellcheck install.sh uninstall.sh tools/package-firefox.sh
