@@ -4,6 +4,23 @@ All notable changes to this project. Versions follow [Semantic Versioning](https
 sections are generated from [Conventional Commits](https://www.conventionalcommits.org) by
 `tools/release.py` (see CONTRIBUTING.md).
 
+## [0.4.0](https://github.com/vintoware/grayjay-link/compare/v0.3.1...v0.4.0) (2026-11-23)
+
+Firefox extension: unchanged (0.3.1).
+
+### Features
+
+- **links:** open YouTube and Twitch links from other apps in Grayjay ([`88cf5c5`](https://github.com/vintoware/grayjay-link/commit/88cf5c56600f9ce8ff2982dca8713cca3a9c5aa5))
+
+### Fixes
+
+- **release:** fetch release tags before computing the next version ([`d0c0e5a`](https://github.com/vintoware/grayjay-link/commit/d0c0e5acf8124e164486f06bea2096db403cda91))
+
+### Chores
+
+- **release:** release a new Firefox extension only when firefox/ changed ([`95789d4`](https://github.com/vintoware/grayjay-link/commit/95789d4de373d4f16df4c597e8821710b34c14be))
+
+
 ## [0.3.1](https://github.com/vintoware/grayjay-link/compare/v0.3.0...v0.3.1) (2026-11-23)
 
 ### Fixes
