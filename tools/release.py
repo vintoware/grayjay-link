@@ -177,7 +177,7 @@ def version_tuple(v: str) -> tuple[int, ...]:
 def repo_url() -> str:
     try:
         url = git("remote", "get-url", "origin").strip()
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, OSError):  # no repo, no remote, or no git at all
         return DEFAULT_REPO_URL
     m = re.match(r"(?:git@github\.com:|https://github\.com/)(?P<path>[^/]+/[^/]+?)(?:\.git)?$", url)
     return f"https://github.com/{m.group('path')}" if m else DEFAULT_REPO_URL
