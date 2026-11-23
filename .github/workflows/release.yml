@@ -90,6 +90,67 @@ jobs:
           gh release create "v$VERSION" --target "$GITHUB_SHA" --title "grayjay-link $VERSION" \
             --notes-file notes.md dist/*
 
+  firefox:
+    # Signs the extension on addons.mozilla.org as an unlisted (self-distributed)
+    # add-on and attaches the signed .xpi plus updates.json to the release.
+    # Installed copies find new versions through the manifest's update_url, which
+    # points at updates.json on the latest release.
+    needs: release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      HAS_AMO_KEYS: ${{ secrets.AMO_JWT_ISSUER != '' && secrets.AMO_JWT_SECRET != '' }}
+      VERSION: ${{ needs.release.outputs.version }}
+    steps:
+      - name: Check for AMO credentials
+        if: env.HAS_AMO_KEYS != 'true'
+        run: |
+          echo "::warning::AMO_JWT_ISSUER / AMO_JWT_SECRET are not set; the Firefox extension was not signed. Upload grayjay-link-firefox-$VERSION.zip to addons.mozilla.org by hand."
+
+      - uses: actions/checkout@v4
+        if: env.HAS_AMO_KEYS == 'true'
+        with:
+          ref: v${{ env.VERSION }}
+
+      - uses: actions/setup-node@v4
+        if: env.HAS_AMO_KEYS == 'true'
+        with:
+          node-version: lts/*
+
+      - name: Sign on addons.mozilla.org (unlisted)
+        if: env.HAS_AMO_KEYS == 'true'
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          npx --yes web-ext@10.8.0 sign --channel=unlisted --source-dir firefox \
+            --artifacts-dir signed --approval-timeout 1800000
+          ls -l signed
+
+      - name: Attach the signed XPI and updates.json
+        if: env.HAS_AMO_KEYS == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -- signed/*.xpi
+          [ "$#" -eq 1 ] && [ -f "$1" ] || { echo "::error::expected one signed .xpi, got: $*"; exit 1; }
+          xpi="grayjay-link-firefox-$VERSION.xpi"
+          mv "$1" "$xpi"
+          python3 - "$VERSION" "$xpi" "$GITHUB_REPOSITORY" > updates.json <<'PY'
+          import hashlib, json, sys
+          version, xpi, repo = sys.argv[1:4]
+          addon_id = json.load(open("firefox/manifest.json"))["browser_specific_settings"]["gecko"]["id"]
+          sha256 = hashlib.sha256(open(xpi, "rb").read()).hexdigest()
+          json.dump({"addons": {addon_id: {"updates": [{
+              "version": version,
+              "update_link": f"https://github.com/{repo}/releases/download/v{version}/{xpi}",
+              "update_hash": f"sha256:{sha256}",
+          }]}}}, sys.stdout, indent=2)
+          PY
+          cat updates.json
+          gh release upload "v$VERSION" "$xpi" updates.json --clobber
+
   rpm:
     # Runs vintoware-rpm's own update hook (which verifies the signed checksums
     # against this workflow and commit) and pushes the spec bump; that push

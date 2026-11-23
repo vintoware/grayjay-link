@@ -61,5 +61,9 @@ When that commit reaches `main`, `.github/workflows/release.yml`:
    vintoware-rpm's build-and-publish workflow. If this step fails, vintoware-rpm's 3-hourly
    check picks the release up anyway.
 
-The Firefox extension still needs signing on addons.mozilla.org: upload the release's
-`grayjay-link-firefox-X.Y.Z.zip` as a new version of the unlisted add-on.
+In parallel, the `firefox` job signs the extension on addons.mozilla.org as a new version
+of the unlisted add-on, with `web-ext sign --channel=unlisted` and the `AMO_JWT_ISSUER` /
+`AMO_JWT_SECRET` secrets. It then attaches `grayjay-link-firefox-X.Y.Z.xpi` and
+`updates.json` to the release. Installed extensions pick the new version up through
+`update_url`. Each version can be signed only once, so if signing fails, release a new
+patch version rather than re-running with the same number.
