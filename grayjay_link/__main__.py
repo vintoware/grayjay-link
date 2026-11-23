@@ -21,34 +21,51 @@ class DaemonUnavailable(Exception):
     pass
 
 
-def request(payload: dict, timeout: float = 120, autostart: bool = True) -> dict:
+LEASE_SECONDS = 30
+
+
+def request(payload: dict, timeout: float = 120) -> dict:
     """Send one JSON request to the daemon's control socket."""
-    path = str(paths.control_socket())
-    deadline = None
-    while True:
-        try:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-                s.settimeout(timeout)
-                s.connect(path)
-                s.sendall(json.dumps(payload).encode() + b"\n")
-                buf = b""
-                while not buf.endswith(b"\n"):
-                    chunk = s.recv(65536)
-                    if not chunk:
-                        break
-                    buf += chunk
-                return json.loads(buf)
-        except (FileNotFoundError, ConnectionRefusedError):
-            if not autostart:
-                raise DaemonUnavailable("the grayjay-link daemon is not running") from None
-            if deadline is None:
-                subprocess.run(["systemctl", "--user", "start", "grayjay-link.service"],
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                deadline = time.monotonic() + 5
-            if time.monotonic() > deadline:
-                raise DaemonUnavailable("the grayjay-link daemon is not running "
-                                        "(systemctl --user start grayjay-link)") from None
-            time.sleep(0.2)
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.settimeout(timeout)
+            s.connect(str(paths.control_socket()))
+            s.sendall(json.dumps(payload).encode() + b"\n")
+            buf = b""
+            while not buf.endswith(b"\n"):
+                chunk = s.recv(65536)
+                if not chunk:
+                    break
+                buf += chunk
+            return json.loads(buf)
+    except (FileNotFoundError, ConnectionRefusedError):
+        raise DaemonUnavailable("Grayjay Link isn't running. It runs while the Grayjay Link "
+                                "widget is on your panel or desktop.") from None
+
+
+def daemon_running() -> bool:
+    try:
+        request({"cmd": "status"}, timeout=3)
+        return True
+    except (DaemonUnavailable, OSError):
+        return False
+
+
+def start_daemon(lease: float) -> None:
+    """Start a detached daemon (no-op if one is running); used by the widget."""
+    if daemon_running():
+        return
+    log = paths.log_file()
+    log.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [sys.executable, "-P", "-m", "grayjay_link", "daemon", "--lease", str(lease), "--log-file", str(log)]
+    subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True, close_fds=True, cwd=str(paths.log_file().parent))
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if daemon_running():
+            return
+        time.sleep(0.1)
+    raise DaemonUnavailable(f"the daemon did not start; see {log}")
 
 
 def notify(title: str, body: str) -> None:
@@ -122,11 +139,17 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="grayjay-link", description="Open links in Grayjay Desktop via its sync protocol.")
     ap.add_argument("--version", action="version", version=f"grayjay-link {__version__}")
     sub = ap.add_subparsers(dest="command", required=True)
-    d = sub.add_parser("daemon", help="run the background daemon")
+    d = sub.add_parser("daemon", help="run the daemon in the foreground")
     d.add_argument("-v", "--verbose", action="store_true")
+    d.add_argument("--lease", type=float, default=0,
+                   help="exit after this many seconds without a widget heartbeat (0 = never)")
+    d.add_argument("--log-file", help="log to this file instead of stderr")
+    st = sub.add_parser("start", help="start the daemon in the background (the widget does this)")
+    st.add_argument("--lease", type=float, default=LEASE_SECONDS)
+    sub.add_parser("stop", help="stop the daemon")
     s = sub.add_parser("status", help="show connection status")
     s.add_argument("--json", action="store_true")
-    s.add_argument("--no-autostart", action="store_true", help="don't try to start the daemon")
+    s.add_argument("--heartbeat", action="store_true", help="keep the daemon alive (used by the widget)")
     p = sub.add_parser("pair", help="pair with Grayjay using its grayjay://sync/ link")
     p.add_argument("link")
     p.add_argument("--no-wait", action="store_true", help="return immediately")
@@ -143,11 +166,18 @@ def main(argv: list[str] | None = None) -> int:
     args, _unknown = ap.parse_known_args(argv)  # Firefox appends manifest path + extension id
 
     if args.command == "daemon":
-        logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                            format="%(levelname)s %(name)s: %(message)s")
+        level = logging.DEBUG if args.verbose else logging.INFO
+        fmt = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+        if args.log_file:
+            from logging.handlers import RotatingFileHandler
+            handler = RotatingFileHandler(args.log_file, maxBytes=512 * 1024, backupCount=1)
+            handler.setFormatter(logging.Formatter(fmt))
+            logging.basicConfig(level=level, handlers=[handler])
+        else:
+            logging.basicConfig(level=level, format=fmt)
         from .daemon import serve
         try:
-            asyncio.run(serve())
+            asyncio.run(serve(args.lease or None))
         except KeyboardInterrupt:
             pass
         return 0
@@ -155,9 +185,18 @@ def main(argv: list[str] | None = None) -> int:
         return native_host()
 
     try:
+        if args.command == "start":
+            start_daemon(args.lease)
+            return 0
+        if args.command == "stop":
+            try:
+                request({"cmd": "shutdown"}, timeout=5)
+            except DaemonUnavailable:
+                pass
+            return 0
         if args.command == "status":
             try:
-                st = request({"cmd": "status"}, timeout=5, autostart=not args.no_autostart)["status"]
+                st = request({"cmd": "status", "heartbeat": args.heartbeat}, timeout=5)["status"]
             except DaemonUnavailable as e:
                 if not args.json:
                     raise

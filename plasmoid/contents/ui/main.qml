@@ -40,7 +40,7 @@ PlasmoidItem {
     function stateText() {
         switch (linkState) {
         case "loading": return i18n("Checking…");
-        case "daemon-down": return i18n("Background service is not running");
+        case "daemon-down": return i18n("Starting the background helper…");
         case "unpaired": return i18n("Not paired with Grayjay");
         case "grayjay-not-running": return i18n("Paired · Grayjay is not running");
         case "connecting": return i18n("Paired · connecting…");
@@ -70,12 +70,25 @@ PlasmoidItem {
         executable.connectSource(source);
     }
 
+    // The daemon lives as long as this widget: every poll is a heartbeat, and the
+    // daemon exits ~30 s after the last one (widget removed, plasmashell gone).
+    property double lastStartAttempt: 0
+
     function refresh() {
-        run(cli + " status --json --no-autostart", (code, out, err) => {
+        run(cli + " status --json --heartbeat", (code, out, err) => {
             try {
                 root.status = JSON.parse(out);
             } catch (e) {
                 root.status = { state: "daemon-down", message: (err || out || "").trim() };
+            }
+            if (root.status.state === "daemon-down" && Date.now() - lastStartAttempt > 10000) {
+                lastStartAttempt = Date.now();
+                run(cli + " start", (c, o, e) => {
+                    if (c !== 0) {
+                        root.status = { state: "daemon-down", message: (e || o || "").trim() };
+                    }
+                    root.refresh();
+                });
             }
         });
     }
@@ -189,20 +202,14 @@ PlasmoidItem {
             anchors.margins: Kirigami.Units.smallSpacing
             spacing: Kirigami.Units.largeSpacing
 
-            // --- background service down -----------------------------------
-            ColumnLayout {
-                visible: root.linkState === "daemon-down"
+            // --- helper not running (it is started automatically) ------------
+            PlasmaComponents3.Label {
+                visible: root.linkState === "daemon-down" && !!(root.status && root.status.message)
+                         && !root.status.message.startsWith("Grayjay Link isn't running")
                 Layout.fillWidth: true
-                PlasmaComponents3.Label {
-                    Layout.fillWidth: true
-                    wrapMode: Text.WordWrap
-                    text: i18n("The grayjay-link service isn't running. It keeps the connection to Grayjay open in the background.")
-                }
-                PlasmaComponents3.Button {
-                    icon.name: "media-playback-start"
-                    text: i18n("Start service")
-                    onClicked: root.run("systemctl --user enable --now grayjay-link.service", () => root.refresh())
-                }
+                wrapMode: Text.WordWrap
+                color: Kirigami.Theme.negativeTextColor
+                text: root.status && root.status.message ? root.status.message : ""
             }
 
             // --- pairing ---------------------------------------------------

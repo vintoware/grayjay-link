@@ -17,6 +17,10 @@ def control_socket() -> pathlib.Path:
     return pathlib.Path(runtime) / "grayjay-link" / "control.sock"
 
 
+def log_file() -> pathlib.Path:
+    return _xdg("XDG_STATE_HOME", ".local/state") / "grayjay-link" / "daemon.log"
+
+
 def grayjay_port_file() -> pathlib.Path:
     """Written by Grayjay once its local web server is up (Program.cs, PortFile)."""
     return pathlib.Path.home() / ".var/app/app.grayjay.Grayjay/data/Grayjay/port"

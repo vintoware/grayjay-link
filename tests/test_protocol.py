@@ -226,6 +226,58 @@ class RelayPairingTests(unittest.IsolatedAsyncioTestCase):
             await self._pair("Abcd2345", accept=False)
 
 
+class LifetimeTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.daemon = Daemon(State(pathlib.Path(self.tmp.name) / "state.json"))
+
+    async def _status(self, heartbeat):
+        reader = asyncio.StreamReader()
+        reader.feed_data(json.dumps({"cmd": "status", "heartbeat": heartbeat}).encode() + b"\n")
+        reader.feed_eof()
+        writer = mock.MagicMock()
+        writer.drain = mock.AsyncMock()
+        await self.daemon.handle_client(reader, writer)
+        return json.loads(writer.write.call_args[0][0])
+
+    async def test_lease_expires_without_heartbeat(self):
+        reason = await asyncio.wait_for(self.daemon.lease_watchdog(1.5), 5)
+        self.assertIn("no heartbeat", reason)
+
+    async def test_heartbeat_keeps_alive_but_plain_status_does_not(self):
+        watchdog = asyncio.create_task(self.daemon.lease_watchdog(1.5))
+        for _ in range(4):
+            await asyncio.sleep(0.8)
+            self.assertTrue((await self._status(heartbeat=True))["ok"])
+            self.assertFalse(watchdog.done())
+        for _ in range(4):  # Firefox/CLI status calls don't extend the lease
+            await self._status(heartbeat=False)
+            await asyncio.sleep(0.6)
+        self.assertTrue(watchdog.done())
+
+    async def test_shutdown_command(self):
+        watchdog = asyncio.create_task(self.daemon.lease_watchdog(60))
+        reader = asyncio.StreamReader()
+        reader.feed_data(b'{"cmd": "shutdown"}\n')
+        reader.feed_eof()
+        writer = mock.MagicMock()
+        writer.drain = mock.AsyncMock()
+        await self.daemon.handle_client(reader, writer)
+        self.assertEqual(await asyncio.wait_for(watchdog, 3), "shutdown requested")
+
+    async def test_single_instance_lock(self):
+        from grayjay_link import daemon as d
+        with mock.patch.dict("os.environ", {"XDG_RUNTIME_DIR": self.tmp.name}):
+            first = d.acquire_instance_lock()
+            self.assertIsNotNone(first)
+            self.assertIsNone(d.acquire_instance_lock())
+            first.close()
+            again = d.acquire_instance_lock()
+            self.assertIsNotNone(again)
+            again.close()
+
+
 class PairingLinkTests(unittest.TestCase):
     def test_bad_links(self):
         for bad in ("https://example.com", "grayjay://sync/!!!", "grayjay://sync/e30"):

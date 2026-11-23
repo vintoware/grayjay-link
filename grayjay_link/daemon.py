@@ -1,5 +1,9 @@
 """grayjay-link daemon: keeps a sync session with the local Grayjay and opens URLs in it.
 
+Lifetime follows the Plasma widget: the widget starts the daemon and sends a
+heartbeat with every status poll; the daemon exits once heartbeats stop for
+`lease` seconds (widget removed, plasmashell gone).
+
 Staying connected matters: while a paired device is offline, Grayjay retries
 its last known address every 5 seconds. For this helper that address is
 127.0.0.1:12315, which is Grayjay itself, so each retry would log two errors
@@ -10,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import fcntl
 import json
 import logging
 import os
@@ -81,6 +86,19 @@ class Daemon:
         self._connected = asyncio.Event()
         self._session: protocol.NoiseSession | None = None
         self._launched_at: float | None = None
+        self.last_heartbeat = time.monotonic()
+        self.shutdown_requested = asyncio.Event()
+
+    async def lease_watchdog(self, lease: float) -> str:
+        """Return once the widget stops sending heartbeats (or a shutdown is requested)."""
+        while True:
+            try:
+                await asyncio.wait_for(self.shutdown_requested.wait(), 1)
+                return "shutdown requested"
+            except asyncio.TimeoutError:
+                pass
+            if time.monotonic() - self.last_heartbeat > lease:
+                return f"no heartbeat from the widget for {lease:.0f}s"
 
     # --- status ---------------------------------------------------------------
 
@@ -294,7 +312,12 @@ class Daemon:
             req = json.loads(line or b"{}")
             cmd = req.get("cmd")
             if cmd == "status":
+                if req.get("heartbeat"):
+                    self.last_heartbeat = time.monotonic()
                 resp = {"ok": True, "status": self.status()}
+            elif cmd == "shutdown":
+                self.shutdown_requested.set()
+                resp = {"ok": True}
             elif cmd == "open":
                 resp = await self.cmd_open(req.get("url", ""), int(req.get("position") or 0),
                                            bool(req.get("launch", True)), bool(req.get("focus", True)))
@@ -316,15 +339,49 @@ class Daemon:
             writer.close()
 
 
-async def serve() -> None:
+def acquire_instance_lock():
+    """Single instance per user. Returns the open lock file, or None if another daemon runs."""
+    path = paths.control_socket().parent / "daemon.lock"
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    f = open(path, "w")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        f.close()
+        return None
+    return f
+
+
+async def serve(lease: float | None) -> None:
+    lock = acquire_instance_lock()
+    if lock is None:
+        log.info("another grayjay-link daemon is already running")
+        return
     state = State(paths.state_file())
     daemon = Daemon(state)
     sock_path = paths.control_socket()
-    sock_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     if sock_path.exists():
         sock_path.unlink()
     server = await asyncio.start_unix_server(daemon.handle_client, path=str(sock_path))
     os.chmod(sock_path, 0o600)
-    log.info("grayjay-link %s listening on %s (public key %s)", __version__, sock_path, _b64(state.public_key))
-    async with server:
-        await asyncio.gather(server.serve_forever(), daemon.connection_loop())
+    log.info("grayjay-link %s listening on %s (public key %s, lease %s)", __version__, sock_path,
+             _b64(state.public_key), f"{lease:.0f}s" if lease else "none")
+    tasks = [asyncio.create_task(server.serve_forever()), asyncio.create_task(daemon.connection_loop())]
+    if lease:
+        tasks.append(asyncio.create_task(daemon.lease_watchdog(lease)))
+    try:
+        done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for t in done:
+            if not t.cancelled() and t.exception() is None:
+                log.info("exiting: %s", t.result())
+    finally:
+        for t in tasks:
+            t.cancel()
+        if daemon._session:
+            daemon._session.close()
+        server.close()
+        try:
+            sock_path.unlink()
+        except FileNotFoundError:
+            pass
+        lock.close()

@@ -8,9 +8,12 @@ CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}"
 if [ -x "$HOME/.local/bin/grayjay-link" ] && [ "${1:-}" = "--purge" ]; then
     "$HOME/.local/bin/grayjay-link" unpair 2>/dev/null || true
 fi
-systemctl --user disable --now grayjay-link.service 2>/dev/null || true
-rm -f "$CONFIG/systemd/user/grayjay-link.service"
-systemctl --user daemon-reload 2>/dev/null || true
+"$HOME/.local/bin/grayjay-link" stop 2>/dev/null || true
+if [ -f "$CONFIG/systemd/user/grayjay-link.service" ]; then  # installed by old versions
+    systemctl --user disable --now grayjay-link.service 2>/dev/null || true
+    rm -f "$CONFIG/systemd/user/grayjay-link.service"
+    systemctl --user daemon-reload 2>/dev/null || true
+fi
 
 kpackagetool6 -t Plasma/Applet -r com.vintoware.grayjaylink >/dev/null 2>&1 || true
 rm -f "$SHARE/applications/grayjay-link-handler.desktop" \

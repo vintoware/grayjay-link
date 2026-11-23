@@ -73,16 +73,21 @@ else
     warn "kpackagetool6 not found; skipping the Plasma widget."
 fi
 
-say "Starting the background service"
-install -Dm644 "$SRC/data/grayjay-link.service" "$CONFIG/systemd/user/grayjay-link.service"
-systemctl --user daemon-reload
-systemctl --user enable grayjay-link.service >/dev/null 2>&1
-systemctl --user restart grayjay-link.service
+# The daemon's lifetime follows the widget; remove the systemd unit older versions installed.
+if [ -f "$CONFIG/systemd/user/grayjay-link.service" ]; then
+    say "Removing the old grayjay-link systemd service"
+    systemctl --user disable --now grayjay-link.service >/dev/null 2>&1 || true
+    rm -f "$CONFIG/systemd/user/grayjay-link.service"
+    systemctl --user daemon-reload
+fi
+# Restart a running daemon so it picks up the new code; the widget starts it again.
+"$BIN" stop >/dev/null 2>&1 || true
 
 cat <<EOF
 
 Done. Next steps:
   1. Add the "Grayjay Link" widget to your panel (right-click panel → Add Widgets…).
+     The background helper runs while the widget exists and stops ~30 s after it is removed.
   2. Open it and pair: in Grayjay → Sync copy the pairing link, paste it into the widget, accept in Grayjay.
   3. Firefox: install the extension from $SRC/firefox (see README).
 EOF

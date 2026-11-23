@@ -9,7 +9,7 @@ It works with the **unmodified Flathub Grayjay**. Grayjay Desktop has no way to 
 ```
 Firefox ──native messaging──┐
 grayjay-link: URLs ─────────┼─► grayjay-link daemon ──sync protocol (127.0.0.1:12315)──► Grayjay
-Plasma widget / CLI ────────┘     (systemd user service)       "Send to device" (opcode 101)
+Plasma widget / CLI ────────┘   (runs while the widget exists)   "Send to device" (opcode 101)
 ```
 
 ## Components
@@ -17,9 +17,9 @@ Plasma widget / CLI ────────┘     (systemd user service)      
 | Path | What it is |
 |---|---|
 | `grayjay_link/` | Python helper: sync-protocol client, background daemon and CLI. Pure Python 3.11+, no extra packages. |
-| `plasmoid/` | Plasma 6 widget: status, pairing, sending a link, unpairing. |
+| `plasmoid/` | Plasma 6 widget: status, pairing, sending a link, unpairing. It also owns the daemon's lifetime. |
 | `firefox/` | Firefox extension: right-click **Open link in Grayjay**, a toolbar button, and optional click interception. |
-| `data/` | systemd user unit, `grayjay-link:` URL handler, native messaging manifest. |
+| `data/` | `grayjay-link:` URL handler and native messaging manifest templates. |
 
 ## Install
 
@@ -29,7 +29,6 @@ Plasma widget / CLI ────────┘     (systemd user service)      
 
 Everything is installed for the current user, with no root needed:
 - the helper goes in `~/.local/share/grayjay-link` and `~/.local/bin/grayjay-link`;
-- a `grayjay-link.service` systemd user unit is enabled and started;
 - the Plasma widget, the icon and the `grayjay-link:` handler are registered;
 - the Firefox native messaging manifest is written next to your Firefox profiles.
 
@@ -74,6 +73,16 @@ xdg-open 'grayjay-link:https://youtu.be/dQw4w9WgXcQ'
 grayjay-link open https://www.twitch.tv/somechannel
 ```
 
+## Daemon lifetime
+
+The daemon runs exactly as long as the widget does. You don't need a system service.
+
+- While the widget exists (on a panel or on the desktop, expanded or not), it polls the daemon every few seconds. Each poll counts as a heartbeat, and the widget starts the daemon if it isn't running.
+- When heartbeats stop for 30 s, the daemon exits. That happens when you remove the widget, when plasmashell quits or crashes, or when you log out.
+- Firefox, `grayjay-link:` links and the CLI use the daemon while it's running. They never start it or keep it alive. Without the widget they report *Grayjay Link isn't running*.
+
+> **Note:** while Grayjay is running and the daemon isn't (for example after you remove the widget but stay paired), Grayjay retries the helper every 5 seconds. Each retry writes two errors to Grayjay's `log.txt`; see *Why a daemon* below. To stop that, unpair before removing the widget, or remove the *Grayjay Link* device under **Sync** in Grayjay.
+
 ## CLI
 
 ```
@@ -81,10 +90,11 @@ grayjay-link status [--json]     connection state
 grayjay-link pair LINK           pair using Grayjay's grayjay://sync/… link
 grayjay-link open URL [--position SECONDS] [--no-launch] [--no-focus]
 grayjay-link unpair
-grayjay-link daemon [-v]         what the systemd unit runs
+grayjay-link start | stop        start/stop the background daemon (the widget starts it)
+grayjay-link daemon [-v] [--lease S]   run it in the foreground
 ```
 
-Daemon logs: `journalctl --user -u grayjay-link`.
+Daemon log: `~/.local/state/grayjay-link/daemon.log`.
 
 ## How it works
 
