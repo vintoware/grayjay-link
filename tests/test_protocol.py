@@ -61,6 +61,7 @@ class DaemonDirectTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.state = State(pathlib.Path(self.tmp.name) / "state.json")
+        self.state.launch_command = "/bin/false"  # belt and braces: never the real Grayjay
 
     async def asyncTearDown(self):
         self.tmp.cleanup()
@@ -69,6 +70,9 @@ class DaemonDirectTests(unittest.IsolatedAsyncioTestCase):
         self.state.device = {"public_key": base64.b64encode(gj.pub).decode(), "name": "x",
                              "host": "127.0.0.1", "port": gj.port}
         d = Daemon(self.state)
+        # Never start the real Grayjay from tests (cmd_open launches it when not yet connected).
+        d._launch_grayjay = mock.Mock()
+        self.addCleanup(lambda: d._launch_grayjay.assert_not_called())
         task = asyncio.create_task(d.connection_loop())
         self.addAsyncCleanup(self._cancel, task)
         return d
@@ -86,6 +90,7 @@ class DaemonDirectTests(unittest.IsolatedAsyncioTestCase):
         await gj.start()
         self.addCleanup(gj.close)
         d = await self._daemon_for(gj)
+        await asyncio.wait_for(d._connected.wait(), 5)
         with mock.patch("grayjay_link.daemon.raise_grayjay", return_value=True):
             r = await d.cmd_open("https://www.youtube.com/watch?v=dQw4w9WgXcQ", 12)
         self.assertEqual(r, {"ok": True})

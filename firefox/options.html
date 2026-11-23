@@ -24,6 +24,11 @@
     <label>Other hosts, one per line (every link on these hosts is sent to Grayjay):
       <textarea id="extra" placeholder="odysee.com&#10;rumble.com"></textarea></label>
   </fieldset>
+  <fieldset>
+    <legend>Connection</legend>
+    <label>Helper port on 127.0.0.1: <input type="number" id="port" min="1024" max="65535" style="width: 7em"></label>
+    <p class="hint">Must match <code>http_port</code> in <code>~/.config/grayjay-link/state.json</code> (default 47315).</p>
+  </fieldset>
   <button id="check">Check connection</button>
   <div id="status"></div>
   <script src="rules.js"></script>

@@ -1,7 +1,0 @@
-#!/bin/sh
-# System-wide Firefox native messaging entry point for Grayjay Link.
-# Firefox only reads user-level manifests from ~/.mozilla, which can't be used
-# on XDG-layout installs (its mere existence switches Firefox back to the legacy
-# profile root), so the manifest lives in /usr/lib64/mozilla and this wrapper
-# runs the calling user's own helper.
-exec "$HOME/.local/bin/grayjay-link" native-host "$@"

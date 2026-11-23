@@ -12,7 +12,7 @@
         "Id": "com.vintoware.grayjaylink",
         "License": "MIT",
         "Name": "Grayjay Link",
-        "Version": "0.1.0",
+        "Version": "0.2.0",
         "Website": "https://github.com/vintoware/grayjay-link"
     },
     "X-Plasma-API-Minimum-Version": "6.0"

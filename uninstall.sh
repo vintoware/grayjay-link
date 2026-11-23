@@ -18,16 +18,10 @@ fi
 kpackagetool6 -t Plasma/Applet -r com.vintoware.grayjaylink >/dev/null 2>&1 || true
 rm -f "$SHARE/applications/grayjay-link-handler.desktop" \
       "$SHARE/icons/hicolor/scalable/apps/grayjay-link.svg" \
-      "$HOME/.mozilla/native-messaging-hosts/grayjay_link.json" \
       "$CONFIG/mozilla/native-messaging-hosts/grayjay_link.json" \
       "$HOME/.librewolf/native-messaging-hosts/grayjay_link.json" \
       "$HOME/.local/bin/grayjay-link"
 rm -rf "$SHARE/grayjay-link"
-for f in /usr/lib64/mozilla/native-messaging-hosts/grayjay_link.json \
-         /usr/lib/mozilla/native-messaging-hosts/grayjay_link.json \
-         /usr/local/libexec/grayjay-link-native-host; do
-    [ -e "$f" ] && sudo rm -f "$f"
-done
 update-desktop-database -q "$SHARE/applications" 2>/dev/null || true
 
 if [ "${1:-}" = "--purge" ]; then

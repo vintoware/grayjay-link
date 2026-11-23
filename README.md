@@ -7,7 +7,7 @@ Click a YouTube link in Firefox and the video starts in Grayjay. If Grayjay isn'
 It works with the **unmodified Flathub Grayjay**. Grayjay Desktop has no way to accept a URL from outside: no command-line argument, no URL scheme, and its local HTTP API is token-protected. The one way in is the **sync protocol**, which the phone app uses for "Send to device". Grayjay Link pairs with Grayjay as if it were another device and sends links that way.
 
 ```
-Firefox ──native messaging──┐
+Firefox ──http://127.0.0.1───┐
 grayjay-link: URLs ─────────┼─► grayjay-link daemon ──sync protocol (127.0.0.1:12315)──► Grayjay
 Plasma widget / CLI ────────┘   (runs while the widget exists)   "Send to device" (opcode 101)
 ```
@@ -19,7 +19,7 @@ Plasma widget / CLI ────────┘   (runs while the widget exists)
 | `grayjay_link/` | Python helper: sync-protocol client, background daemon and CLI. Pure Python 3.11+, no extra packages. |
 | `plasmoid/` | Plasma 6 widget: status, pairing, sending a link, unpairing. It also owns the daemon's lifetime. |
 | `firefox/` | Firefox extension: right-click **Open link in Grayjay**, a toolbar button, and optional click interception. |
-| `data/` | `grayjay-link:` URL handler and native messaging manifest templates. |
+| `data/` | `grayjay-link:` URL handler template. |
 
 ## Install
 
@@ -30,11 +30,7 @@ Plasma widget / CLI ────────┘   (runs while the widget exists)
 Everything is installed for the current user, with no root needed:
 - the helper goes in `~/.local/share/grayjay-link` and `~/.local/bin/grayjay-link`;
 - the Plasma widget, the icon and the `grayjay-link:` handler are registered;
-- the Firefox native messaging host is registered. Firefox only reads per-user manifests from `~/.mozilla`, and on
-  XDG-layout installs (profiles in `~/.config/mozilla/firefox`, as on current Fedora) that directory must not be
-  created: if it exists, Firefox switches back to the legacy profile location and your profiles seem to vanish.
-  In that case the installer asks for `sudo` once and installs `/usr/lib64/mozilla/native-messaging-hosts/grayjay_link.json`
-  plus a small wrapper, `/usr/local/libexec/grayjay-link-native-host`, which runs the calling user's helper.
+- nothing outside your home directory: no root, no system files. The Firefox extension talks to the daemon over a loopback HTTP endpoint (see *Security notes*).
 
 Requirements:
 - Grayjay from Flathub (`app.grayjay.Grayjay`);
@@ -119,8 +115,14 @@ python3 -m unittest
 ## Security notes
 
 - The private key lives in `~/.config/grayjay-link/state.json` with mode 0600. Anyone holding it can send links to your Grayjay, and receives the sync data Grayjay pushes to paired devices.
-- The control socket (`$XDG_RUNTIME_DIR/grayjay-link/control.sock`) is only accessible to your user.
-- The browser can only ask the helper to `open` a URL or report `status`. It cannot pair or unpair.
+- The control socket (`$XDG_RUNTIME_DIR/grayjay-link/control.sock`) is only accessible to your user. Pairing and unpairing are only possible through it.
+- The browser endpoint `http://127.0.0.1:47315` (`http_port` in `state.json`; must match the extension's option) only offers `open` and `status`. It is written so that web pages can't use it:
+  - every request must carry an `X-Grayjay-Link: 1` header. Forms can't set one, and a page's `fetch()` that sets one needs a CORS preflight, which is always refused;
+  - a request that has an `Origin` header is accepted only from `moz-extension://`, which web content can't forge;
+  - the `Host` header must be `127.0.0.1` or `localhost` on that port, so DNS rebinding is blocked;
+  - no CORS headers are ever sent, so web pages can't read responses.
+
+  Other extensions in your Firefox, and local programs running as you, can open links in Grayjay through it, the same as they could through `xdg-open grayjay-link:…`.
 
 ## Uninstall
 

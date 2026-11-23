@@ -1,12 +1,36 @@
 "use strict";
 
-const HOST = "grayjay_link";
+// Talks to the grayjay-link daemon's loopback endpoint (http://127.0.0.1:<port>/v1/...).
+// The daemon runs while the Grayjay Link Plasma widget exists.
+const DEFAULT_PORT = 47315;
 const SCRIPT_ID = "grayjay-link-intercept";
+const NOT_RUNNING = "Grayjay Link isn't running. It runs while the Grayjay Link widget is on your panel or desktop.";
 
 async function getSettings() {
-  const stored = await browser.storage.local.get("settings");
-  return { ...GrayjayRules.DEFAULTS, ...(stored.settings || {}),
-           services: { ...GrayjayRules.DEFAULTS.services, ...((stored.settings || {}).services || {}) } };
+  const stored = (await browser.storage.local.get("settings")).settings || {};
+  return { ...GrayjayRules.DEFAULTS, port: DEFAULT_PORT, ...stored,
+           services: { ...GrayjayRules.DEFAULTS.services, ...(stored.services || {}) } };
+}
+
+async function callDaemon(cmd, body = {}) {
+  const { port } = await getSettings();
+  let resp;
+  try {
+    resp = await fetch(`http://127.0.0.1:${port}/v1/${cmd}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Grayjay-Link": "1" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+      credentials: "omit",
+    });
+  } catch (e) {
+    return { ok: false, error: NOT_RUNNING };
+  }
+  try {
+    return await resp.json();
+  } catch (e) {
+    return { ok: false, error: `Unexpected response from port ${port} (HTTP ${resp.status}).` };
+  }
 }
 
 async function notify(title, message) {
@@ -14,16 +38,8 @@ async function notify(title, message) {
 }
 
 async function openInGrayjay(url) {
-  let resp;
-  try {
-    resp = await browser.runtime.sendNativeMessage(HOST, { cmd: "open", url });
-  } catch (e) {
-    await notify("Grayjay Link isn't installed", "The grayjay-link helper could not be started. Run install.sh from the grayjay-link repository.");
-    return { ok: false, error: String(e) };
-  }
-  if (!resp || !resp.ok) {
-    await notify("Couldn't open in Grayjay", (resp && resp.error) || "Unknown error");
-  }
+  const resp = await callDaemon("open", { url });
+  if (!resp.ok) await notify("Couldn't open in Grayjay", resp.error || "Unknown error");
   return resp;
 }
 
@@ -62,9 +78,7 @@ browser.action.onClicked.addListener((tab) => {
 
 browser.runtime.onMessage.addListener((msg) => {
   if (msg && msg.cmd === "open" && typeof msg.url === "string") return openInGrayjay(msg.url);
-  if (msg && msg.cmd === "status") {
-    return browser.runtime.sendNativeMessage(HOST, { cmd: "status" }).catch((e) => ({ ok: false, error: String(e) }));
-  }
+  if (msg && msg.cmd === "status") return callDaemon("status");
   if (msg && msg.cmd === "settings-changed") return syncContentScript();
   return undefined;
 });

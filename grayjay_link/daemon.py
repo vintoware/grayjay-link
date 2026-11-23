@@ -24,7 +24,7 @@ import socket
 import subprocess
 import time
 
-from . import __version__, paths, protocol
+from . import __version__, httpapi, paths, protocol
 from .crypto import x25519_generate, x25519_public
 from .kwin import raise_grayjay
 
@@ -56,6 +56,7 @@ class State:
         self.device: dict | None = data.get("device")
         self.launch_command: str = data.get("launch_command", "flatpak run app.grayjay.Grayjay")
         self.device_name: str = data.get("device_name") or f"Grayjay Link ({socket.gethostname()})"
+        self.http_port: int = int(data.get("http_port") or httpapi.DEFAULT_PORT)
         self.save()
 
     def save(self) -> None:
@@ -66,6 +67,7 @@ class State:
             "device": self.device,
             "launch_command": self.launch_command,
             "device_name": self.device_name,
+            "http_port": self.http_port,
         }
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
@@ -124,6 +126,7 @@ class Daemon:
             "device": dev,
             "public_key": _b64(self.state.public_key),
             "device_name": self.state.device_name,
+            "http_port": self.state.http_port,
             "pairing": dict(self.pairing),
         }
 
@@ -306,29 +309,30 @@ class Daemon:
 
     # --- control socket ---------------------------------------------------------
 
+    async def dispatch(self, req: dict) -> dict:
+        cmd = req.get("cmd")
+        if cmd == "status":
+            if req.get("heartbeat"):
+                self.last_heartbeat = time.monotonic()
+            return {"ok": True, "status": self.status()}
+        if cmd == "shutdown":
+            self.shutdown_requested.set()
+            return {"ok": True}
+        if cmd == "open":
+            return await self.cmd_open(str(req.get("url") or ""), int(req.get("position") or 0),
+                                       bool(req.get("launch", True)), bool(req.get("focus", True)))
+        if cmd == "pair":
+            return await self.cmd_pair(req.get("link", ""))
+        if cmd == "cancel-pair":
+            return await self.cmd_cancel_pair()
+        if cmd == "unpair":
+            return await self.cmd_unpair()
+        return {"ok": False, "error": f"unknown command {cmd!r}"}
+
     async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
             line = await asyncio.wait_for(reader.readline(), 10)
-            req = json.loads(line or b"{}")
-            cmd = req.get("cmd")
-            if cmd == "status":
-                if req.get("heartbeat"):
-                    self.last_heartbeat = time.monotonic()
-                resp = {"ok": True, "status": self.status()}
-            elif cmd == "shutdown":
-                self.shutdown_requested.set()
-                resp = {"ok": True}
-            elif cmd == "open":
-                resp = await self.cmd_open(req.get("url", ""), int(req.get("position") or 0),
-                                           bool(req.get("launch", True)), bool(req.get("focus", True)))
-            elif cmd == "pair":
-                resp = await self.cmd_pair(req.get("link", ""))
-            elif cmd == "cancel-pair":
-                resp = await self.cmd_cancel_pair()
-            elif cmd == "unpair":
-                resp = await self.cmd_unpair()
-            else:
-                resp = {"ok": False, "error": f"unknown command {cmd!r}"}
+            resp = await self.dispatch(json.loads(line or b"{}"))
         except Exception as e:  # noqa: BLE001
             log.exception("control request failed")
             resp = {"ok": False, "error": str(e)}
@@ -363,6 +367,12 @@ async def serve(lease: float | None) -> None:
     if sock_path.exists():
         sock_path.unlink()
     server = await asyncio.start_unix_server(daemon.handle_client, path=str(sock_path))
+    http_server = None
+    try:
+        http_server = await httpapi.serve(daemon.dispatch, state.http_port)
+        log.info("browser endpoint on http://127.0.0.1:%d", state.http_port)
+    except OSError as e:
+        log.warning("browser endpoint disabled, port %d unavailable: %s", state.http_port, e)
     os.chmod(sock_path, 0o600)
     log.info("grayjay-link %s listening on %s (public key %s, lease %s)", __version__, sock_path,
              _b64(state.public_key), f"{lease:.0f}s" if lease else "none")
@@ -380,6 +390,8 @@ async def serve(lease: float | None) -> None:
         if daemon._session:
             daemon._session.close()
         server.close()
+        if http_server:
+            http_server.close()
         try:
             sock_path.unlink()
         except FileNotFoundError:

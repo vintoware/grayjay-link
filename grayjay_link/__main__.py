@@ -8,7 +8,6 @@ import json
 import logging
 import shutil
 import socket
-import struct
 import subprocess
 import sys
 import time
@@ -83,36 +82,6 @@ def parse_link_uri(uri: str) -> tuple[str, int]:
     return urllib.parse.unquote(rest) if rest.startswith("http%3A") or rest.startswith("https%3A") else rest, 0
 
 
-# --- Firefox native messaging -------------------------------------------------
-
-BROWSER_COMMANDS = {"open", "status"}
-
-
-def native_host() -> int:
-    stdin, stdout = sys.stdin.buffer, sys.stdout.buffer
-    while True:
-        raw_len = stdin.read(4)
-        if len(raw_len) < 4:
-            return 0
-        (n,) = struct.unpack("=I", raw_len)
-        try:
-            msg = json.loads(stdin.read(n))
-            if msg.get("cmd") not in BROWSER_COMMANDS:
-                resp = {"ok": False, "error": "command not allowed from the browser"}
-            else:
-                payload = {"cmd": msg["cmd"]}
-                if msg["cmd"] == "open":
-                    payload.update(url=str(msg.get("url", "")), position=int(msg.get("position") or 0))
-                resp = request(payload)
-        except DaemonUnavailable as e:
-            resp = {"ok": False, "error": str(e)}
-        except Exception as e:  # noqa: BLE001
-            resp = {"ok": False, "error": f"native host error: {e}"}
-        out = json.dumps(resp).encode()
-        stdout.write(struct.pack("=I", len(out)) + out)
-        stdout.flush()
-
-
 # --- commands -----------------------------------------------------------------
 
 
@@ -162,8 +131,7 @@ def main(argv: list[str] | None = None) -> int:
     o.add_argument("--no-focus", action="store_true", help="don't raise the Grayjay window")
     u = sub.add_parser("open-uri", help="handle a grayjay-link: URI (used by the desktop handler)")
     u.add_argument("uri")
-    sub.add_parser("native-host", help="Firefox native messaging host")
-    args, _unknown = ap.parse_known_args(argv)  # Firefox appends manifest path + extension id
+    args = ap.parse_args(argv)
 
     if args.command == "daemon":
         level = logging.DEBUG if args.verbose else logging.INFO
@@ -181,9 +149,6 @@ def main(argv: list[str] | None = None) -> int:
         except KeyboardInterrupt:
             pass
         return 0
-    if args.command == "native-host":
-        return native_host()
-
     try:
         if args.command == "start":
             start_daemon(args.lease)
